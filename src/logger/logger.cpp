@@ -93,13 +93,13 @@ void LoggerPrivate::log(const QString &msg)
 {
     switch (echo)
     {
-        case Logger::Echo::StdErr:
+        case Echo::StdErr:
             fprintf(stderr, "%s\n", msg.toLocal8Bit().constData());
             break;
-        case Logger::Echo::File:
+        case Echo::File:
             echoFileStream << msg << "\n";
             break;
-        case Logger::Echo::Udp:
+        case Echo::Udp:
             echoSocket.writeDatagram( (msg+"\n").toLocal8Bit().constData(),
                                       echoDestinationAddress,
                                       echoDestinationPort );
@@ -162,10 +162,10 @@ QString LoggerPrivate::statusString() const
 {
     QString string = QString("[%1] %2").arg(appNameString());
     switch (echo) {
-        case Logger::Echo::Mute:   return string.arg( QString("Muted\n") );
-        case Logger::Echo::StdErr: return string.arg( QString("Writing in stderr stream\n") );
-        case Logger::Echo::File:   return string.arg( QString("Writing in file\n") );
-        case Logger::Echo::Udp:    return string.arg( QString("Writing to %1:%2\n").arg(echoDestinationAddress.toString())
+        case Echo::Mute:   return string.arg( QString("Muted\n") );
+        case Echo::StdErr: return string.arg( QString("Writing in stderr stream\n") );
+        case Echo::File:   return string.arg( QString("Writing in file\n") );
+        case Echo::Udp:    return string.arg( QString("Writing to %1:%2\n").arg(echoDestinationAddress.toString())
                                                                                    .arg(echoDestinationPort) );
         default:
             break;
@@ -210,12 +210,12 @@ QString LoggerPrivate::argCommandString()
 
 void LoggerPrivate::switchToStdErr()
 {
-    echo = Logger::Echo::StdErr;
+    echo = Echo::StdErr;
 }
 
 void LoggerPrivate::switchToFile(const QString &filePath, int flushPeriodMsec)
 {
-    echo = Logger::Echo::File;
+    echo = Echo::File;
 
     static QFile file;
     file.setFileName(filePath);
@@ -232,14 +232,14 @@ void LoggerPrivate::switchToFile(const QString &filePath, int flushPeriodMsec)
 
 void LoggerPrivate::switchToUdp(const QHostAddress &address, quint16 port)
 {
-    echo = Logger::Echo::Udp;
+    echo = Echo::Udp;
     echoDestinationAddress = address;
     echoDestinationPort = port;
 }
 
 void LoggerPrivate::switchToMute()
 {
-    echo = Logger::Echo::Mute;
+    echo = Echo::Mute;
 }
 
 void LoggerPrivate::flushEchoFile()

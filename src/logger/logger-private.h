@@ -12,7 +12,15 @@ namespace qtlogger {
 class LoggerPrivate : public QObject {
     Q_OBJECT
 public:
-    Logger::Echo echo = Logger::Echo::StdErr;
+    enum class Echo {
+        Mute,
+        StdErr,
+        File,
+        Udp
+    };
+
+public:
+    Echo echo = Echo::StdErr;
 
     QUdpSocket commandSocket;
     quint16 commandPort = 6060;

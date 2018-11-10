@@ -8,13 +8,6 @@ namespace qtlogger {
 class LoggerPrivate;
 class Logger {
 public:
-    enum class Echo {
-        Mute,
-        StdErr,
-        File,
-        Udp
-    };
-public:
     ~Logger();
 public:
     static void exec(const QString &command);

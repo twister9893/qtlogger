@@ -19,9 +19,11 @@ public:
 public:
     static void exec(const QString &command);
 public:
-    static void debug(const QString &msg);
-    static void warning(const QString &msg);
-    static void critical(const QString &msg);
+    static void info(const QString &msg, const QMessageLogContext &context);
+    static void debug(const QString &msg, const QMessageLogContext &context);
+    static void warning(const QString &msg, const QMessageLogContext &context);
+    static void critical(const QString &msg, const QMessageLogContext &context);
+    static void fatal(const QString &msg, const QMessageLogContext &context);
 
 private:
     static Logger & instance();

@@ -11,19 +11,19 @@ void qtLoggerHandler(QtMsgType type, const QMessageLogContext &context, const QS
     switch (type)
     {
         case QtDebugMsg:
-            Logger::debug(msg);
+            Logger::debug(msg, context);
             break;
         case QtInfoMsg:
-//            Logger::debug(msg);
+            Logger::info(msg, context);
             break;
         case QtWarningMsg:
-            Logger::warning(msg);
+            Logger::warning(msg, context);
             break;
         case QtCriticalMsg:
-            Logger::critical(msg);
+            Logger::critical(msg, context);
             break;
         case QtFatalMsg:
-//            fprintf(stderr, "Fatal: %s (%s:%u, %s)\n", localMsg.constData(), context.file, context.line, context.function);
+            Logger::fatal(msg, context);
             abort();
     }
 }

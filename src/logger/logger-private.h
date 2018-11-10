@@ -21,10 +21,12 @@ public:
     LoggerPrivate();
 public:
     void log(const QString &msg);
+    void exec(const QString &command);
     void processCommand(const QStringList &command, const QHostAddress &sender = QHostAddress());
 public:
     QString statusString() const;
     static QString appNameString();
+    static QString argCommandString();
 
 private slots:
     void onCommandReceived();

@@ -24,6 +24,11 @@ public:
     void exec(const QString &command);
     void processCommand(const QStringList &command, const QHostAddress &sender = QHostAddress());
 public:
+    void writeStatus(const QHostAddress &address, quint16 port) const;
+    void switchToStdErr();
+    void switchToUdp(const QHostAddress &address, quint16 port);
+    void switchToMute();
+public:
     QString statusString() const;
     static QString appNameString();
     static QString argCommandString();

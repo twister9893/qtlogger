@@ -95,36 +95,57 @@ void LoggerPrivate::exec(const QString &command)
 
 void LoggerPrivate::processCommand(const QStringList &command, const QHostAddress &sender)
 {
-    if (command.size() < 2) {
-        return;
-    }
+    if (command.size() < 2) { return; }
     const auto &action = command.at(1).simplified();
 
-    if (action == "status")
+    if (QString("status").startsWith(action))
     {
-        QUdpSocket socket;
-        const auto &port = ( command.size() < 3 ? commandPort : command.at(2).toUShort() );
-        socket.writeDatagram( statusString().toLocal8Bit(), (sender.isNull() ? QHostAddress::Broadcast : sender), port);
+        const auto &address = (sender.isNull() ? QHostAddress::Broadcast : sender);
+        const auto &port = (command.size() < 3 ? commandPort : command.at(2).toUShort());
+        writeStatus(address, port);
     }
-    else if (action == "echo")
+    else if (QString("echo").startsWith(action))
     {
         const auto &echoMode = command.at(2).simplified();
-        if (echoMode == "stderr")
+
+        if (QString("stderr").startsWith(echoMode))
         {
-            echo = Logger::Echo::StdErr;
+            switchToStdErr();
         }
-        else if (echoMode == "udp")
+        else if (QString("udp").startsWith(echoMode))
         {
-            echo = Logger::Echo::Udp;
+            const auto &address = (sender.isNull() ? QHostAddress::Broadcast : sender);
             const auto &port = ( command.size() < 4 ? commandPort : command.at(3).toUShort() );
-            echoDestinationAddress = (sender.isNull() ? QHostAddress::Broadcast : sender);
-            echoDestinationPort = port;
+            switchToUdp(address, port);
         }
     }
-    else if (action == "mute")
+    else if (QString("mute").startsWith(action))
     {
-        echo = Logger::Echo::Mute;
+        switchToMute();
     }
+}
+
+void LoggerPrivate::writeStatus(const QHostAddress &address, quint16 port) const
+{
+    static QUdpSocket socket;
+    socket.writeDatagram( statusString().toLocal8Bit(), address, port);
+}
+
+void LoggerPrivate::switchToStdErr()
+{
+    echo = Logger::Echo::StdErr;
+}
+
+void LoggerPrivate::switchToUdp(const QHostAddress &address, quint16 port)
+{
+    echo = Logger::Echo::Udp;
+    echoDestinationAddress = address;
+    echoDestinationPort = port;
+}
+
+void LoggerPrivate::switchToMute()
+{
+    echo = Logger::Echo::Mute;
 }
 
 QString LoggerPrivate::statusString() const

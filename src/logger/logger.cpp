@@ -66,9 +66,23 @@ Logger & Logger::instance()
 
 LoggerPrivate::LoggerPrivate()
 {
+    connect(&echoFileFlushTimer, &QTimer::timeout, this, &LoggerPrivate::flushEchoFile);
+
+    connect(this, &LoggerPrivate::toggleStdErr, this, &LoggerPrivate::onEchoModeChanged);
+    connect(this, &LoggerPrivate::toggleFile, this, &LoggerPrivate::onEchoModeChanged);
+    connect(this, &LoggerPrivate::toggleUdp, this, &LoggerPrivate::onEchoModeChanged);
+    connect(this, &LoggerPrivate::toggleMute, this, &LoggerPrivate::onEchoModeChanged);
+
+    connect(this, &LoggerPrivate::toggleStdErr, this, &LoggerPrivate::switchToStdErr);
+    connect(this, &LoggerPrivate::toggleFile, this, &LoggerPrivate::switchToFile);
+    connect(this, &LoggerPrivate::toggleUdp, this, &LoggerPrivate::switchToUdp);
+    connect(this, &LoggerPrivate::toggleMute, this, &LoggerPrivate::switchToMute);
+
     exec(argCommandString());
+
     commandSocket.bind(commandPort, QUdpSocket::ShareAddress);
     connect(&commandSocket, &QUdpSocket::readyRead, this, &LoggerPrivate::onCommandReceived);
+
 }
 
 void LoggerPrivate::log(const QString &msg)
@@ -77,6 +91,9 @@ void LoggerPrivate::log(const QString &msg)
     {
         case Logger::Echo::StdErr:
             fprintf(stderr, "%s\n", msg.toLocal8Bit().constData());
+            break;
+        case Logger::Echo::File:
+            echoFileStream << msg << "\n";
             break;
         case Logger::Echo::Udp:
             echoSocket.writeDatagram( (msg+"\n").toLocal8Bit().constData(),
@@ -110,18 +127,24 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
 
         if (QString("stderr").startsWith(echoMode))
         {
-            switchToStdErr();
+            emit toggleStdErr();
+        }
+        else if (QString("file").startsWith(echoMode))
+        {
+            const auto &filePath = ( command.size() < 4 ? (appNameString() + ".log") : command.at(3) );
+            const auto &flushPeriodMsec = ( command.size() < 5 ? 5000 : command.at(4).toInt() );
+            emit toggleFile(filePath, flushPeriodMsec);
         }
         else if (QString("udp").startsWith(echoMode))
         {
             const auto &address = (sender.isNull() ? QHostAddress::Broadcast : sender);
             const auto &port = ( command.size() < 4 ? commandPort : command.at(3).toUShort() );
-            switchToUdp(address, port);
+            emit toggleUdp(address, port);
         }
     }
     else if (QString("mute").startsWith(action))
     {
-        switchToMute();
+        emit toggleMute();
     }
 }
 
@@ -129,23 +152,6 @@ void LoggerPrivate::writeStatus(const QHostAddress &address, quint16 port) const
 {
     static QUdpSocket socket;
     socket.writeDatagram( statusString().toLocal8Bit(), address, port);
-}
-
-void LoggerPrivate::switchToStdErr()
-{
-    echo = Logger::Echo::StdErr;
-}
-
-void LoggerPrivate::switchToUdp(const QHostAddress &address, quint16 port)
-{
-    echo = Logger::Echo::Udp;
-    echoDestinationAddress = address;
-    echoDestinationPort = port;
-}
-
-void LoggerPrivate::switchToMute()
-{
-    echo = Logger::Echo::Mute;
 }
 
 QString LoggerPrivate::statusString() const
@@ -196,6 +202,53 @@ QString LoggerPrivate::argCommandString()
         read = true;
     }
     return string;
+}
+
+void LoggerPrivate::switchToStdErr()
+{
+    echo = Logger::Echo::StdErr;
+}
+
+void LoggerPrivate::switchToFile(const QString &filePath, int flushPeriodMsec)
+{
+    echo = Logger::Echo::File;
+
+    static QFile file;
+    file.setFileName(filePath);
+    if (!file.open(QFile::WriteOnly))
+    {
+        emit toggleStdErr();
+        qCritical() << Q_FUNC_INFO << "Echo file opening failed," << file.errorString();
+        return;
+    }
+
+    echoFileStream.setDevice(&file);
+    echoFileFlushTimer.start(flushPeriodMsec);
+}
+
+void LoggerPrivate::switchToUdp(const QHostAddress &address, quint16 port)
+{
+    echo = Logger::Echo::Udp;
+    echoDestinationAddress = address;
+    echoDestinationPort = port;
+}
+
+void LoggerPrivate::switchToMute()
+{
+    echo = Logger::Echo::Mute;
+}
+
+void LoggerPrivate::flushEchoFile()
+{
+    echoFileStream.flush();
+}
+
+void LoggerPrivate::onEchoModeChanged()
+{
+    echoFileFlushTimer.stop();
+    if (echoFileStream.device()) {
+        echoFileStream.device()->close();
+    }
 }
 
 void LoggerPrivate::onCommandReceived()

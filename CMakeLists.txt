@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.9)
-project(interface)
+project(qtlogger)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/lib")
@@ -17,4 +17,4 @@ include(qt-add-library)
 include_directories(src)
 include_directories(include)
 
-#add_subdirectory(src)
+add_subdirectory(src)

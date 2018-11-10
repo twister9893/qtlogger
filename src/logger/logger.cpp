@@ -9,6 +9,10 @@
 
 #include "ansi-colors.h"
 
+// TODO: Add runtime config
+// TODO: Add level filtering
+// TODO: Add func filtering
+
 using namespace qtlogger;
 
 Logger::~Logger()

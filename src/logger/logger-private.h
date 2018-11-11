@@ -23,14 +23,16 @@ public:
     Echo echo = Echo::StdErr;
 
     QUdpSocket commandSocket;
-    quint16 commandPort = 6060;
+    quint16 commandPort = 0;
 
     QTextStream echoFileStream;
-    QTimer echoFileFlushTimer;
+    QTimer flushTimer;
+    int defaultFlushPeriodMsec = 0;
 
     QUdpSocket echoSocket;
-    QHostAddress echoDestinationAddress;
-    quint16 echoDestinationPort = 0;
+    QHostAddress echoDestAddress;
+    quint16 echoDestPort = 0;
+    quint16 defaultDestPort = 0;
 
 public:
     LoggerPrivate();

@@ -2,6 +2,7 @@
 #include "logger-private.h"
 
 #include <QCoreApplication>
+#include <QSettings>
 #include <QNetworkDatagram>
 #include <QTime>
 #include <QDir>
@@ -70,7 +71,12 @@ Logger & Logger::instance()
 
 LoggerPrivate::LoggerPrivate()
 {
-    connect(&echoFileFlushTimer, &QTimer::timeout, this, &LoggerPrivate::flushEchoFile);
+    QSettings settings(".qtlogger-rc", QSettings::NativeFormat);
+    commandPort = settings.value("command-port", 6060).toUInt();
+    defaultDestPort = settings.value("default-dest-port", 6061).toUInt();
+    defaultFlushPeriodMsec = settings.value("default-flush-period", 5000).toInt();
+
+    connect(&flushTimer, &QTimer::timeout, this, &LoggerPrivate::flushEchoFile);
 
     connect(this, &LoggerPrivate::toggleStdErr, this, &LoggerPrivate::onEchoModeChanged);
     connect(this, &LoggerPrivate::toggleFile, this, &LoggerPrivate::onEchoModeChanged);
@@ -82,11 +88,11 @@ LoggerPrivate::LoggerPrivate()
     connect(this, &LoggerPrivate::toggleUdp, this, &LoggerPrivate::switchToUdp);
     connect(this, &LoggerPrivate::toggleMute, this, &LoggerPrivate::switchToMute);
 
+    exec(settings.value("startup-command").toString());
     exec(argCommandString());
 
     commandSocket.bind(commandPort, QUdpSocket::ShareAddress);
     connect(&commandSocket, &QUdpSocket::readyRead, this, &LoggerPrivate::onCommandReceived);
-
 }
 
 void LoggerPrivate::log(const QString &msg)
@@ -101,8 +107,8 @@ void LoggerPrivate::log(const QString &msg)
             break;
         case Echo::Udp:
             echoSocket.writeDatagram( (msg+"\n").toLocal8Bit().constData(),
-                                      echoDestinationAddress,
-                                      echoDestinationPort );
+                                      echoDestAddress,
+                                      echoDestPort );
             break;
         default:
             break;
@@ -122,7 +128,7 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
     if (QString("status").startsWith(action))
     {
         const auto &address = (sender.isNull() ? QHostAddress::Broadcast : sender);
-        const auto &port = (command.size() < 3 ? commandPort : command.at(2).toUShort());
+        const auto &port = (command.size() < 3 ? defaultDestPort : command.at(2).toUShort());
         writeStatus(address, port);
     }
     else if (QString("echo").startsWith(action))
@@ -136,13 +142,13 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
         else if (QString("file").startsWith(echoMode))
         {
             const auto &filePath = ( command.size() < 4 ? (appNameString() + ".log") : command.at(3) );
-            const auto &flushPeriodMsec = ( command.size() < 5 ? 5000 : command.at(4).toInt() );
+            const auto &flushPeriodMsec = ( command.size() < 5 ? defaultFlushPeriodMsec : command.at(4).toInt() );
             emit toggleFile(filePath, flushPeriodMsec);
         }
         else if (QString("udp").startsWith(echoMode))
         {
             const auto &address = (sender.isNull() ? QHostAddress::Broadcast : sender);
-            const auto &port = ( command.size() < 4 ? commandPort : command.at(3).toUShort() );
+            const auto &port = ( command.size() < 4 ? defaultDestPort : command.at(3).toUShort() );
             emit toggleUdp(address, port);
         }
     }
@@ -165,8 +171,8 @@ QString LoggerPrivate::statusString() const
         case Echo::Mute:   return string.arg( QString("Muted\n") );
         case Echo::StdErr: return string.arg( QString("Writing in stderr stream\n") );
         case Echo::File:   return string.arg( QString("Writing in file\n") );
-        case Echo::Udp:    return string.arg( QString("Writing to %1:%2\n").arg(echoDestinationAddress.toString())
-                                                                                   .arg(echoDestinationPort) );
+        case Echo::Udp:    return string.arg( QString("Writing to %1:%2\n").arg(echoDestAddress.toString())
+                                                                                   .arg(echoDestPort) );
         default:
             break;
     }
@@ -227,14 +233,14 @@ void LoggerPrivate::switchToFile(const QString &filePath, int flushPeriodMsec)
     }
 
     echoFileStream.setDevice(&file);
-    echoFileFlushTimer.start(flushPeriodMsec);
+    flushTimer.start(flushPeriodMsec);
 }
 
 void LoggerPrivate::switchToUdp(const QHostAddress &address, quint16 port)
 {
     echo = Echo::Udp;
-    echoDestinationAddress = address;
-    echoDestinationPort = port;
+    echoDestAddress = address;
+    echoDestPort = port;
 }
 
 void LoggerPrivate::switchToMute()
@@ -249,7 +255,7 @@ void LoggerPrivate::flushEchoFile()
 
 void LoggerPrivate::onEchoModeChanged()
 {
-    echoFileFlushTimer.stop();
+    flushTimer.stop();
     if (echoFileStream.device()) {
         echoFileStream.device()->close();
     }

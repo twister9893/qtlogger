@@ -10,10 +10,6 @@
 
 #include "ansi-colors.h"
 
-// TODO: Add runtime config
-// TODO: Add level filtering
-// TODO: Add func filtering
-
 using namespace qtlogger;
 
 Logger::~Logger()
@@ -24,20 +20,29 @@ void Logger::exec(const QString &command)
     instance().d_ptr->exec(command);
 }
 
-void Logger::info(const QString &msg, const QMessageLogContext &context)
-{
-    instance().d_ptr->log(msg);
-}
-
 void Logger::debug(const QString &msg, const QMessageLogContext &context)
 {
+    if (!instance().d_ptr->pass(LoggerPrivate::Level::Debug)) { return; }
+    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+
     instance().d_ptr->log( QString(GRAY "[%1] DEBG <%2> %3" RESET).arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                   .arg(LoggerPrivate::appNameString())
                                                                   .arg(msg));
 }
 
+void Logger::info(const QString &msg, const QMessageLogContext &context)
+{
+    if (!instance().d_ptr->pass(LoggerPrivate::Level::Info)) { return; }
+    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+
+    instance().d_ptr->log(msg);
+}
+
 void Logger::warning(const QString &msg, const QMessageLogContext &context)
 {
+    if (!instance().d_ptr->pass(LoggerPrivate::Level::Warning)) { return; }
+    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+
     instance().d_ptr->log( QString("[%1] " YELLOW "WARN <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                           .arg(LoggerPrivate::appNameString())
                                                                           .arg(msg));
@@ -45,6 +50,9 @@ void Logger::warning(const QString &msg, const QMessageLogContext &context)
 
 void Logger::critical(const QString &msg, const QMessageLogContext &context)
 {
+    if (!instance().d_ptr->pass(LoggerPrivate::Level::Critical)) { return; }
+    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+
     instance().d_ptr->log( QString("[%1] " RED "CRIT <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                        .arg(LoggerPrivate::appNameString())
                                                                        .arg(msg));
@@ -52,6 +60,9 @@ void Logger::critical(const QString &msg, const QMessageLogContext &context)
 
 void Logger::fatal(const QString &msg, const QMessageLogContext &context)
 {
+    if (!instance().d_ptr->pass(LoggerPrivate::Level::Fatal)) { return; }
+    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+
     instance().d_ptr->log( QString(RED "[%1] FATL <%2> terminated at %3:%4 " RESET "%5").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                                         .arg(LoggerPrivate::appNameString())
                                                                                         .arg(context.file)
@@ -133,6 +144,7 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
     }
     else if (QString("echo").startsWith(action))
     {
+        if (command.size() < 3) { return; }
         const auto &echoMode = command.at(2).simplified();
 
         if (QString("stderr").startsWith(echoMode))
@@ -151,10 +163,80 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
             const auto &port = ( command.size() < 4 ? defaultDestPort : command.at(3).toUShort() );
             emit toggleUdp(address, port);
         }
+        else if (QString("mute").startsWith(echoMode))
+        {
+            emit toggleMute();
+        }
     }
-    else if (QString("mute").startsWith(action))
+    else if (QString("filter").startsWith(action))
     {
-        emit toggleMute();
+        if (command.size() < 3) { return; }
+        const auto &filterOperation = command.at(2).simplified();
+        const auto &filterType = (command.size() < 4 ? QString("") : command.at(3).simplified());
+        const auto &filterString = (command.size() < 5 ? QString("") : command.at(4).simplified());
+
+        enum Operation { Add, Del, Clear };
+        Operation operation = Clear;
+
+        if (QString("add").startsWith(filterOperation)) {
+            operation = Add;
+        } else if (QString("del").startsWith(filterOperation)) {
+            operation = Del;
+        } else if (QString("clear").startsWith(filterOperation)) {
+            operation = Clear;
+        } else {
+            return;
+        }
+
+        if (filterType.isEmpty() && operation == Clear)
+        {
+            levelFilter = quint32(Level::All);
+            funcFilter.clear();
+        }
+        else if (QString("level").startsWith(filterType))
+        {
+            if (operation == Clear) {
+                levelFilter = quint32(Level::All);
+                return;
+            }
+
+            if (filterString.isEmpty()) {
+                return;
+            }
+
+            QRegExp rx(filterString);
+            if (rx.indexIn("debug") != -1)    { (operation == Add) ? levelFilter |= quint32(Level::Debug)    : levelFilter &= ~quint32(Level::Debug); }
+            if (rx.indexIn("info") != -1)     { (operation == Add) ? levelFilter |= quint32(Level::Info)     : levelFilter &= ~quint32(Level::Info); }
+            if (rx.indexIn("warning") != -1)  { (operation == Add) ? levelFilter |= quint32(Level::Warning)  : levelFilter &= ~quint32(Level::Warning); }
+            if (rx.indexIn("critical") != -1) { (operation == Add) ? levelFilter |= quint32(Level::Critical) : levelFilter &= ~quint32(Level::Critical); }
+            if (rx.indexIn("fatal") != -1)    { (operation == Add) ? levelFilter |= quint32(Level::Fatal)    : levelFilter &= ~quint32(Level::Fatal); }
+        }
+        else if (QString("function").startsWith(filterType))
+        {
+            if (operation == Clear) {
+                funcFilter.clear();
+                return;
+            }
+
+            if (filterString.isEmpty()) {
+                return;
+            }
+
+            if (operation == Add) {
+                funcFilter.append(filterString);
+            } else {
+                QRegExp rx(filterString);
+                for (auto it = funcFilter.begin(), ite = funcFilter.end(); it != ite;)
+                {
+                    if (rx.indexIn(*it) != -1) {
+                        it = funcFilter.erase(it);
+                        ite = funcFilter.end();
+                    } else {
+                        ++it;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -164,15 +246,36 @@ void LoggerPrivate::writeStatus(const QHostAddress &address, quint16 port) const
     socket.writeDatagram( statusString().toLocal8Bit(), address, port);
 }
 
+bool LoggerPrivate::pass(LoggerPrivate::Level level)
+{
+    return (levelFilter ? (levelFilter & quint32(level)) : true);
+}
+
+bool LoggerPrivate::pass(const QString &func)
+{
+    if (funcFilter.isEmpty()) {
+        return true;
+    }
+
+    for (const QString &filter : funcFilter)
+    {
+        QRegExp rx(filter);
+        if (rx.indexIn(func) != -1) {
+            return true;
+        }
+    }
+    return false;
+}
+
 QString LoggerPrivate::statusString() const
 {
     QString string = QString("[%1] %2").arg(appNameString());
     switch (echo) {
         case Echo::Mute:   return string.arg( QString("Muted\n") );
         case Echo::StdErr: return string.arg( QString("Writing in stderr stream\n") );
-        case Echo::File:   return string.arg( QString("Writing in file\n") );
+        case Echo::File:   return string.arg( QString("Writing in file %1\n").arg(echoFileStream.device() ? static_cast<QFile*>(echoFileStream.device())->fileName() : "") );
         case Echo::Udp:    return string.arg( QString("Writing to %1:%2\n").arg(echoDestAddress.toString())
-                                                                                   .arg(echoDestPort) );
+                                                                           .arg(echoDestPort) );
         default:
             break;
     }

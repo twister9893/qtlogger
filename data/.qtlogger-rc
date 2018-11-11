@@ -1,0 +1,10 @@
+# QtLogger runtime configuration file
+
+# This port will be used to listening commands
+command-port=6060
+
+# Default port for UDP echo mode
+default-dest-port=6061
+
+# Default flush period for file echo mode in msec
+default-flush-period=5000

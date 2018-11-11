@@ -12,7 +12,7 @@
 
 // TODO: Decompose processCommand() function
 // TODO: Add active filters to status
-// TODO: Add app specific rc
+// TODO: Handle OS signals to flush log file before terminate
 
 using namespace qtlogger;
 
@@ -91,10 +91,7 @@ Logger & Logger::instance()
 
 LoggerPrivate::LoggerPrivate()
 {
-    QSettings settings(".qtlogger-rc", QSettings::NativeFormat);
-    commandPort = settings.value("command-port", 6060).toUInt();
-    defaultDestPort = settings.value("default-dest-port", 6061).toUInt();
-    defaultFlushPeriodMsec = settings.value("default-flush-period", 5000).toInt();
+    configure();
 
     connect(&flushTimer, &QTimer::timeout, this, &LoggerPrivate::flushEchoFile);
 
@@ -108,11 +105,19 @@ LoggerPrivate::LoggerPrivate()
     connect(this, &LoggerPrivate::toggleUdp, this, &LoggerPrivate::switchToUdp);
     connect(this, &LoggerPrivate::toggleMute, this, &LoggerPrivate::switchToMute);
 
-    exec(settings.value("startup-command").toString());
+    exec(appRcCommandString());
     exec(argCommandString());
 
     commandSocket.bind(commandPort, QUdpSocket::ShareAddress);
     connect(&commandSocket, &QUdpSocket::readyRead, this, &LoggerPrivate::onCommandReceived);
+}
+
+void LoggerPrivate::configure()
+{
+    QSettings settings(".qtlogger-rc", QSettings::NativeFormat);
+    commandPort = settings.value("command-port", 6060).toUInt();
+    defaultDestPort = settings.value("default-dest-port", 6061).toUInt();
+    defaultFlushPeriodMsec = settings.value("default-flush-period", 5000).toInt();
 }
 
 void LoggerPrivate::log(const QString &msg)
@@ -344,6 +349,19 @@ QString LoggerPrivate::appNameString()
                       : "unknown");
     }
     return string;
+}
+
+QString LoggerPrivate::appRcCommandString()
+{
+    const QString &filePath = (QFile::exists(QString("qtlogger-%1-rc").arg(appNameString())) ? QString("qtlogger-%1-rc").arg(appNameString())
+                                                                                             : QString("qtlogger-default-rc"));
+
+    QFile file(filePath);
+    if(file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream textStream(&file);
+        return textStream.readAll();
+    }
+    return QString();
 }
 
 QString LoggerPrivate::argCommandString()

@@ -49,6 +49,8 @@ public:
 public:
     LoggerPrivate();
 public:
+    void configure();
+
     void log(const QString &msg);
     void exec(const QString &command);
     void processCommand(const QStringList &command, const QHostAddress &sender = QHostAddress());
@@ -59,7 +61,9 @@ public:
     bool passFile(const QString &file);
     bool passFunc(const QString &func);
     QString statusString() const;
+
     static QString appNameString();
+    static QString appRcCommandString();
     static QString argCommandString();
 
 signals:

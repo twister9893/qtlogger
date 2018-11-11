@@ -28,8 +28,8 @@ void Logger::exec(const QString &command)
 void Logger::debug(const QString &msg, const QMessageLogContext &context)
 {
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Debug)) { return; }
-    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
-    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file)))        { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function)))    { return; }
 
     instance().d_ptr->log( QString(GRAY "[%1] DEBG <%2> %3" RESET).arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                   .arg(LoggerPrivate::appNameString())
@@ -39,8 +39,8 @@ void Logger::debug(const QString &msg, const QMessageLogContext &context)
 void Logger::info(const QString &msg, const QMessageLogContext &context)
 {
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Info)) { return; }
-    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
-    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file)))       { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function)))   { return; }
 
     instance().d_ptr->log(msg);
 }
@@ -48,8 +48,8 @@ void Logger::info(const QString &msg, const QMessageLogContext &context)
 void Logger::warning(const QString &msg, const QMessageLogContext &context)
 {
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Warning)) { return; }
-    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
-    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file)))          { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function)))      { return; }
 
     instance().d_ptr->log( QString("[%1] " YELLOW "WARN <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                           .arg(LoggerPrivate::appNameString())
@@ -59,8 +59,8 @@ void Logger::warning(const QString &msg, const QMessageLogContext &context)
 void Logger::critical(const QString &msg, const QMessageLogContext &context)
 {
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Critical)) { return; }
-    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
-    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file)))           { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function)))       { return; }
 
     instance().d_ptr->log( QString("[%1] " RED "CRIT <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                        .arg(LoggerPrivate::appNameString())
@@ -70,8 +70,8 @@ void Logger::critical(const QString &msg, const QMessageLogContext &context)
 void Logger::fatal(const QString &msg, const QMessageLogContext &context)
 {
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Fatal)) { return; }
-    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
-    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file)))        { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function)))    { return; }
 
     instance().d_ptr->log( QString(RED "[%1] FATL <%2> terminated at %3:%4 " RESET "%5").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                                         .arg(LoggerPrivate::appNameString())

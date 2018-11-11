@@ -6,13 +6,14 @@
 #include <QNetworkDatagram>
 #include <QTime>
 #include <QDir>
+
 #include <stdio.h>
+#include <signal.h>
 
 #include "ansi-colors.h"
 
 // TODO: Decompose processCommand() function
 // TODO: Add active filters to status
-// TODO: Handle OS signals to flush log file before terminate
 
 using namespace qtlogger;
 
@@ -92,6 +93,11 @@ Logger & Logger::instance()
 LoggerPrivate::LoggerPrivate()
 {
     configure();
+
+    signal(SIGINT,  LoggerPrivate::onAppTerminate);
+    signal(SIGTERM, LoggerPrivate::onAppTerminate);
+    signal(SIGQUIT, LoggerPrivate::onAppTerminate);
+    signal(SIGSEGV, LoggerPrivate::onAppTerminate);
 
     connect(&flushTimer, &QTimer::timeout, this, &LoggerPrivate::flushEchoFile);
 
@@ -446,4 +452,26 @@ void LoggerPrivate::onCommandReceived()
             processCommand(command, datagram.senderAddress());
         }
     }
+}
+
+void LoggerPrivate::onAppTerminate(int signum)
+{
+    switch (signum)
+    {
+        case SIGINT:  Logger::instance().d_ptr->log(QString("[%1] Interrupted").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+            break;
+        case SIGTERM: Logger::instance().d_ptr->log(QString("[%1] Terminated").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+            break;
+        case SIGQUIT: Logger::instance().d_ptr->log(QString("[%1] Quit signal received").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+            break;
+        case SIGSEGV: Logger::instance().d_ptr->log(QString("[%1] Segmentation fault").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+            break;
+    }
+
+    if (Logger::instance().d_ptr->echo == Echo::File) {
+        Logger::instance().d_ptr->flushEchoFile();
+    }
+
+    signal(signum, SIG_DFL);
+    raise(signum);
 }

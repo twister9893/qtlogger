@@ -83,6 +83,9 @@ private slots:
 private slots:
     void onEchoModeChanged();
     void onCommandReceived();
+
+private:
+    static void onAppTerminate(int signum);
 };
 
 }

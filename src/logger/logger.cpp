@@ -10,6 +10,10 @@
 
 #include "ansi-colors.h"
 
+// TODO: Decompose processCommand() function
+// TODO: Add active filters to status
+// TODO: Add app specific rc
+
 using namespace qtlogger;
 
 Logger::~Logger()
@@ -22,8 +26,9 @@ void Logger::exec(const QString &command)
 
 void Logger::debug(const QString &msg, const QMessageLogContext &context)
 {
-    if (!instance().d_ptr->pass(LoggerPrivate::Level::Debug)) { return; }
-    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+    if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Debug)) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
 
     instance().d_ptr->log( QString(GRAY "[%1] DEBG <%2> %3" RESET).arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                   .arg(LoggerPrivate::appNameString())
@@ -32,16 +37,18 @@ void Logger::debug(const QString &msg, const QMessageLogContext &context)
 
 void Logger::info(const QString &msg, const QMessageLogContext &context)
 {
-    if (!instance().d_ptr->pass(LoggerPrivate::Level::Info)) { return; }
-    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+    if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Info)) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
 
     instance().d_ptr->log(msg);
 }
 
 void Logger::warning(const QString &msg, const QMessageLogContext &context)
 {
-    if (!instance().d_ptr->pass(LoggerPrivate::Level::Warning)) { return; }
-    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+    if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Warning)) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
 
     instance().d_ptr->log( QString("[%1] " YELLOW "WARN <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                           .arg(LoggerPrivate::appNameString())
@@ -50,8 +57,9 @@ void Logger::warning(const QString &msg, const QMessageLogContext &context)
 
 void Logger::critical(const QString &msg, const QMessageLogContext &context)
 {
-    if (!instance().d_ptr->pass(LoggerPrivate::Level::Critical)) { return; }
-    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+    if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Critical)) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
 
     instance().d_ptr->log( QString("[%1] " RED "CRIT <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                        .arg(LoggerPrivate::appNameString())
@@ -60,8 +68,9 @@ void Logger::critical(const QString &msg, const QMessageLogContext &context)
 
 void Logger::fatal(const QString &msg, const QMessageLogContext &context)
 {
-    if (!instance().d_ptr->pass(LoggerPrivate::Level::Fatal)) { return; }
-    if (!instance().d_ptr->pass(QString(context.function))) { return; }
+    if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Fatal)) { return; }
+    if (!instance().d_ptr->passFile(QString(context.file))) { return; }
+    if (!instance().d_ptr->passFunc(QString(context.function))) { return; }
 
     instance().d_ptr->log( QString(RED "[%1] FATL <%2> terminated at %3:%4 " RESET "%5").arg(QTime::currentTime().toString().toLocal8Bit().constData())
                                                                                         .arg(LoggerPrivate::appNameString())
@@ -191,6 +200,7 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
         if (filterType.isEmpty() && operation == Clear)
         {
             levelFilter = quint32(Level::All);
+            fileFilter.clear();
             funcFilter.clear();
         }
         else if (QString("level").startsWith(filterType))
@@ -210,6 +220,32 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
             if (rx.indexIn("warning") != -1)  { (operation == Add) ? levelFilter |= quint32(Level::Warning)  : levelFilter &= ~quint32(Level::Warning); }
             if (rx.indexIn("critical") != -1) { (operation == Add) ? levelFilter |= quint32(Level::Critical) : levelFilter &= ~quint32(Level::Critical); }
             if (rx.indexIn("fatal") != -1)    { (operation == Add) ? levelFilter |= quint32(Level::Fatal)    : levelFilter &= ~quint32(Level::Fatal); }
+        }
+        else if (QString("file").startsWith(filterType))
+        {
+            if (operation == Clear) {
+                fileFilter.clear();
+                return;
+            }
+
+            if (filterString.isEmpty()) {
+                return;
+            }
+
+            if (operation == Add) {
+                fileFilter.append(filterString);
+            } else {
+                QRegExp rx(filterString);
+                for (auto it = fileFilter.begin(), ite = fileFilter.end(); it != ite;)
+                {
+                    if (rx.indexIn(*it) != -1) {
+                        it = fileFilter.erase(it);
+                        ite = fileFilter.end();
+                    } else {
+                        ++it;
+                    }
+                }
+            }
         }
         else if (QString("function").startsWith(filterType))
         {
@@ -246,12 +282,28 @@ void LoggerPrivate::writeStatus(const QHostAddress &address, quint16 port) const
     socket.writeDatagram( statusString().toLocal8Bit(), address, port);
 }
 
-bool LoggerPrivate::pass(LoggerPrivate::Level level)
+bool LoggerPrivate::passLevel(LoggerPrivate::Level level)
 {
     return (levelFilter ? (levelFilter & quint32(level)) : true);
 }
 
-bool LoggerPrivate::pass(const QString &func)
+bool LoggerPrivate::passFile(const QString &file)
+{
+    if (fileFilter.isEmpty()) {
+        return true;
+    }
+
+    for (const QString &filter : fileFilter)
+    {
+        QRegExp rx(filter);
+        if (rx.indexIn(file) != -1) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool LoggerPrivate::passFunc(const QString &func)
 {
     if (funcFilter.isEmpty()) {
         return true;

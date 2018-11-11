@@ -43,6 +43,7 @@ public:
     quint16 defaultDestPort = 0;
 
     quint32 levelFilter = quint32(Level::All);
+    QStringList fileFilter;
     QStringList funcFilter;
 
 public:
@@ -54,8 +55,9 @@ public:
 public:
     void writeStatus(const QHostAddress &address, quint16 port) const;
 public:
-    bool pass(Level level);
-    bool pass(const QString &func);
+    bool passLevel(Level level);
+    bool passFile(const QString &file);
+    bool passFunc(const QString &func);
     QString statusString() const;
     static QString appNameString();
     static QString argCommandString();

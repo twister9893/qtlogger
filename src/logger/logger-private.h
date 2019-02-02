@@ -1,11 +1,9 @@
-#ifndef LOGGERPRIVATE_H
-#define LOGGERPRIVATE_H
+#ifndef QTLOGGER_LOGGERPRIVATE_H
+#define QTLOGGER_LOGGERPRIVATE_H
 
 #include <QUdpSocket>
 #include <QTextStream>
 #include <QTimer>
-
-#include "logger.h"
 
 namespace qtlogger {
 
@@ -30,14 +28,15 @@ public:
 public:
     Echo echo = Echo::StdErr;
 
-    QUdpSocket commandSocket;
+    QUdpSocket readSocket;
+    QUdpSocket writeSocket;
+
     quint16 commandPort = 0;
 
     QTextStream echoFileStream;
     QTimer flushTimer;
     int defaultFlushPeriodMsec = 0;
 
-    QUdpSocket echoSocket;
     QHostAddress echoDestAddress;
     quint16 echoDestPort = 0;
     quint16 defaultDestPort = 0;
@@ -46,31 +45,48 @@ public:
     QStringList fileFilter;
     QStringList funcFilter;
 
+    typedef void(*SignalHandler)(int);
+    QMap<int,SignalHandler> originalSignalHandlers;
+
+    volatile static bool destroyed;
+
 public:
     LoggerPrivate();
 public:
     void configure();
 
     void log(const QString &msg);
-    void exec(const QString &command);
+    void exec(const QString &command, const QHostAddress &sender = QHostAddress());
     void processCommand(const QStringList &command, const QHostAddress &sender = QHostAddress());
 public:
-    void writeStatus(const QHostAddress &address, quint16 port) const;
-public:
-    bool passLevel(Level level);
-    bool passFile(const QString &file);
-    bool passFunc(const QString &func);
+    bool passDestination(const QString &destination) const;
+    bool passLevel(Level level) const;
+    bool passFile(const QString &file) const;
+    bool passFunc(const QString &func) const;
     QString statusString() const;
 
+    void resetSignals();
+
+    static QString debugString(const QString & msg, const QMessageLogContext &context = QMessageLogContext());
+    static QString infoString(const QString & msg, const QMessageLogContext &context = QMessageLogContext());
+    static QString warningString(const QString & msg, const QMessageLogContext &context = QMessageLogContext());
+    static QString criticalString(const QString & msg, const QMessageLogContext &context = QMessageLogContext());
+    static QString fatalString(const QString & msg, const QMessageLogContext &context = QMessageLogContext());
+
+    static QString hostNameString();
     static QString appNameString();
     static QString appRcCommandString();
     static QString argCommandString();
+
+    static bool parseDestination(const QString &destination, QHostAddress *address, quint16 *port);
 
 signals:
     void toggleStdErr();
     void toggleFile(const QString &filePath, int flushPeriodMsec);
     void toggleUdp(const QHostAddress &address, quint16 port);
     void toggleMute();
+
+    void sendUdpMsg(const QString & msg, const QHostAddress &address, quint16 port);
 
 private slots:
     void switchToStdErr();
@@ -79,6 +95,7 @@ private slots:
     void switchToMute();
 
     void flushEchoFile();
+    void writeUdpMsg(const QString & msg, const QHostAddress &address, quint16 port);
 
 private slots:
     void onEchoModeChanged();
@@ -90,4 +107,4 @@ private:
 
 }
 
-#endif // LOGGERPRIVATE_H
+#endif // QTLOGGER_LOGGERPRIVATE_H

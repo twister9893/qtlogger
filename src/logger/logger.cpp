@@ -2,8 +2,9 @@
 #include "logger-private.h"
 
 #include <QCoreApplication>
+#include <QThread>
 #include <QSettings>
-#include <QNetworkDatagram>
+#include <QHostInfo>
 #include <QTime>
 #include <QDir>
 
@@ -15,69 +16,69 @@
 // TODO: Decompose processCommand() function
 // TODO: Add active filters to status
 
-using namespace qtlogger;
+namespace qtlogger {
+
+volatile bool LoggerPrivate::destroyed = false;
 
 Logger::~Logger()
-{}
+{
+    LoggerPrivate::destroyed = true;
+}
 
 void Logger::exec(const QString &command)
 {
-    instance().d_ptr->exec(command);
+    if (LoggerPrivate::destroyed) { return; }
+    instance().d_ptr->exec(command, QHostAddress::LocalHost);
 }
 
 void Logger::debug(const QString &msg, const QMessageLogContext &context)
 {
+    if (LoggerPrivate::destroyed) { return; }
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Debug)) { return; }
     if (!instance().d_ptr->passFile(QString(context.file)))        { return; }
     if (!instance().d_ptr->passFunc(QString(context.function)))    { return; }
 
-    instance().d_ptr->log( QString(GRAY "[%1] DEBG <%2> %3" RESET).arg(QTime::currentTime().toString().toLocal8Bit().constData())
-                                                                  .arg(LoggerPrivate::appNameString())
-                                                                  .arg(msg));
+    instance().d_ptr->log(LoggerPrivate::debugString(msg, context));
 }
 
 void Logger::info(const QString &msg, const QMessageLogContext &context)
 {
+    if (LoggerPrivate::destroyed) { return; }
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Info)) { return; }
     if (!instance().d_ptr->passFile(QString(context.file)))       { return; }
     if (!instance().d_ptr->passFunc(QString(context.function)))   { return; }
 
-    instance().d_ptr->log(msg);
+    instance().d_ptr->log(LoggerPrivate::infoString(msg, context));
 }
 
 void Logger::warning(const QString &msg, const QMessageLogContext &context)
 {
+    if (LoggerPrivate::destroyed) { return; }
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Warning)) { return; }
     if (!instance().d_ptr->passFile(QString(context.file)))          { return; }
     if (!instance().d_ptr->passFunc(QString(context.function)))      { return; }
 
-    instance().d_ptr->log( QString("[%1] " YELLOW "WARN <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
-                                                                          .arg(LoggerPrivate::appNameString())
-                                                                          .arg(msg));
+    instance().d_ptr->log(LoggerPrivate::warningString(msg, context));
 }
 
 void Logger::critical(const QString &msg, const QMessageLogContext &context)
 {
+    if (LoggerPrivate::destroyed) { return; }
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Critical)) { return; }
     if (!instance().d_ptr->passFile(QString(context.file)))           { return; }
     if (!instance().d_ptr->passFunc(QString(context.function)))       { return; }
 
-    instance().d_ptr->log( QString("[%1] " RED "CRIT <%2> " RESET "%3").arg(QTime::currentTime().toString().toLocal8Bit().constData())
-                                                                       .arg(LoggerPrivate::appNameString())
-                                                                       .arg(msg));
+    instance().d_ptr->log(LoggerPrivate::criticalString(msg, context));
 }
 
 void Logger::fatal(const QString &msg, const QMessageLogContext &context)
 {
+    if (LoggerPrivate::destroyed) { return; }
     if (!instance().d_ptr->passLevel(LoggerPrivate::Level::Fatal)) { return; }
     if (!instance().d_ptr->passFile(QString(context.file)))        { return; }
     if (!instance().d_ptr->passFunc(QString(context.function)))    { return; }
 
-    instance().d_ptr->log( QString(RED "[%1] FATL <%2> terminated at %3:%4 " RESET "%5").arg(QTime::currentTime().toString().toLocal8Bit().constData())
-                                                                                        .arg(LoggerPrivate::appNameString())
-                                                                                        .arg(context.file)
-                                                                                        .arg(context.line)
-                                                                                        .arg(msg));
+    instance().d_ptr->log(LoggerPrivate::fatalString(msg, context));
 }
 
 Logger::Logger() :
@@ -92,12 +93,15 @@ Logger & Logger::instance()
 
 LoggerPrivate::LoggerPrivate()
 {
+    Q_ASSERT_X(qApp != nullptr, "Logger", "instantiate QCoreApplication object first");
+    Q_ASSERT_X(QThread::currentThread() == qApp->thread(), "Logger", "Logger should be created in the same thread with QCoreApplication");
+
     configure();
 
-    signal(SIGINT,  LoggerPrivate::onAppTerminate);
-    signal(SIGTERM, LoggerPrivate::onAppTerminate);
-    signal(SIGQUIT, LoggerPrivate::onAppTerminate);
-    signal(SIGSEGV, LoggerPrivate::onAppTerminate);
+    originalSignalHandlers[SIGINT]  = signal(SIGINT,  LoggerPrivate::onAppTerminate);
+    originalSignalHandlers[SIGTERM] = signal(SIGTERM, LoggerPrivate::onAppTerminate);
+    originalSignalHandlers[SIGQUIT] = signal(SIGQUIT, LoggerPrivate::onAppTerminate);
+    originalSignalHandlers[SIGSEGV] = signal(SIGSEGV, LoggerPrivate::onAppTerminate);
 
     connect(&flushTimer, &QTimer::timeout, this, &LoggerPrivate::flushEchoFile);
 
@@ -111,18 +115,21 @@ LoggerPrivate::LoggerPrivate()
     connect(this, &LoggerPrivate::toggleUdp, this, &LoggerPrivate::switchToUdp);
     connect(this, &LoggerPrivate::toggleMute, this, &LoggerPrivate::switchToMute);
 
+    qRegisterMetaType<QHostAddress>("QHostAddress");
+    connect(this, &LoggerPrivate::sendUdpMsg, this, &LoggerPrivate::writeUdpMsg, Qt::QueuedConnection);
+
     exec(appRcCommandString());
     exec(argCommandString());
 
-    commandSocket.bind(commandPort, QUdpSocket::ShareAddress);
-    connect(&commandSocket, &QUdpSocket::readyRead, this, &LoggerPrivate::onCommandReceived);
+    readSocket.bind(commandPort, QUdpSocket::ShareAddress);
+    connect(&readSocket, &QUdpSocket::readyRead, this, &LoggerPrivate::onCommandReceived);
 }
 
 void LoggerPrivate::configure()
 {
-    QSettings settings(".qtlogger-rc", QSettings::NativeFormat);
-    commandPort = settings.value("command-port", 6060).toUInt();
-    defaultDestPort = settings.value("default-dest-port", 6061).toUInt();
+    QSettings settings(CONFIG_PATH "/.qtlogger-rc", QSettings::NativeFormat);
+    commandPort = uint16_t(settings.value("command-port", 6060u).toUInt());
+    defaultDestPort = uint16_t(settings.value("default-dest-port", 6061u).toUInt());
     defaultFlushPeriodMsec = settings.value("default-flush-period", 5000).toInt();
 }
 
@@ -137,35 +144,41 @@ void LoggerPrivate::log(const QString &msg)
             echoFileStream << msg << "\n";
             break;
         case Echo::Udp:
-            echoSocket.writeDatagram( (msg+"\n").toLocal8Bit().constData(),
-                                      echoDestAddress,
-                                      echoDestPort );
+            emit sendUdpMsg( msg + QString("\n"),
+                             echoDestAddress,
+                             echoDestPort );
             break;
         default:
             break;
     }
 }
 
-void LoggerPrivate::exec(const QString &command)
+void LoggerPrivate::exec(const QString &command, const QHostAddress &sender)
 {
-    processCommand((LoggerPrivate::appNameString() + " " + command).split(" ", QString::SkipEmptyParts));
+    const auto &commands = command.split("|", QString::SkipEmptyParts);
+    for (const auto &c : commands) {
+        processCommand(c.split(" ", QString::SkipEmptyParts), sender);
+    }
 }
 
 void LoggerPrivate::processCommand(const QStringList &command, const QHostAddress &sender)
 {
-    if (command.size() < 2) { return; }
-    const auto &action = command.at(1).simplified();
+    if (command.size() == 0) { return; }
+    const auto &action = command.at(0).simplified();
 
     if (QString("status").startsWith(action))
     {
-        const auto &address = (sender.isNull() ? QHostAddress::Broadcast : sender);
-        const auto &port = (command.size() < 3 ? defaultDestPort : command.at(2).toUShort());
-        writeStatus(address, port);
+        QHostAddress address = (sender.isNull() ? QHostAddress::LocalHost : sender);
+        quint16 port = defaultDestPort;
+        if (command.size() == 2 ) {
+            parseDestination(command.at(1), &address, &port);
+        }
+        emit sendUdpMsg(statusString(), address, port);
     }
     else if (QString("echo").startsWith(action))
     {
-        if (command.size() < 3) { return; }
-        const auto &echoMode = command.at(2).simplified();
+        if (command.size() < 2) { return; }
+        const auto &echoMode = command.at(1).simplified();
 
         if (QString("stderr").startsWith(echoMode))
         {
@@ -173,14 +186,17 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
         }
         else if (QString("file").startsWith(echoMode))
         {
-            const auto &filePath = ( command.size() < 4 ? (appNameString() + ".log") : command.at(3) );
-            const auto &flushPeriodMsec = ( command.size() < 5 ? defaultFlushPeriodMsec : command.at(4).toInt() );
+            const auto &filePath = ( command.size() < 3 ? (appNameString() + ".log") : command.at(2) );
+            const auto &flushPeriodMsec = ( command.size() < 4 ? defaultFlushPeriodMsec : command.at(3).toInt() );
             emit toggleFile(filePath, flushPeriodMsec);
         }
         else if (QString("udp").startsWith(echoMode))
         {
-            const auto &address = (sender.isNull() ? QHostAddress::Broadcast : sender);
-            const auto &port = ( command.size() < 4 ? defaultDestPort : command.at(3).toUShort() );
+            QHostAddress address = (sender.isNull() ? QHostAddress::LocalHost : sender);
+            quint16 port = defaultDestPort;
+            if (command.size() == 3 ) {
+                parseDestination(command.at(2), &address, &port);
+            }
             emit toggleUdp(address, port);
         }
         else if (QString("mute").startsWith(echoMode))
@@ -190,10 +206,10 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
     }
     else if (QString("filter").startsWith(action))
     {
-        if (command.size() < 3) { return; }
-        const auto &filterOperation = command.at(2).simplified();
-        const auto &filterType = (command.size() < 4 ? QString("") : command.at(3).simplified());
-        const auto &filterString = (command.size() < 5 ? QString("") : command.at(4).simplified());
+        if (command.size() < 2) { return; }
+        const auto &filterOperation = command.at(1).simplified();
+        const auto &filterType = (command.size() < 3 ? QString("") : command.at(2).simplified());
+        const auto &filterString = (command.size() < 4 ? QString("") : command.at(3).simplified());
 
         enum Operation { Add, Del, Clear };
         Operation operation = Clear;
@@ -287,18 +303,33 @@ void LoggerPrivate::processCommand(const QStringList &command, const QHostAddres
     }
 }
 
-void LoggerPrivate::writeStatus(const QHostAddress &address, quint16 port) const
+bool LoggerPrivate::passDestination(const QString & destination) const
 {
-    static QUdpSocket socket;
-    socket.writeDatagram( statusString().toLocal8Bit(), address, port);
+    const auto &tupple = destination.split(":", QString::SkipEmptyParts);
+    if (tupple.size() == 2)
+    {
+        QRegExp rx(tupple.first());
+        if (rx.indexIn(LoggerPrivate::hostNameString()) == -1) {
+            return false;
+        }
+    }
+
+    if (tupple.size() > 0)
+    {
+        QRegExp rx(tupple.last());
+        if (rx.indexIn(LoggerPrivate::appNameString()) == -1) {
+            return false;
+        }
+    }
+    return true;
 }
 
-bool LoggerPrivate::passLevel(LoggerPrivate::Level level)
+bool LoggerPrivate::passLevel(LoggerPrivate::Level level) const
 {
     return (levelFilter ? (levelFilter & quint32(level)) : true);
 }
 
-bool LoggerPrivate::passFile(const QString &file)
+bool LoggerPrivate::passFile(const QString &file) const
 {
     if (fileFilter.isEmpty()) {
         return true;
@@ -314,7 +345,7 @@ bool LoggerPrivate::passFile(const QString &file)
     return false;
 }
 
-bool LoggerPrivate::passFunc(const QString &func)
+bool LoggerPrivate::passFunc(const QString &func) const
 {
     if (funcFilter.isEmpty()) {
         return true;
@@ -332,17 +363,69 @@ bool LoggerPrivate::passFunc(const QString &func)
 
 QString LoggerPrivate::statusString() const
 {
-    QString string = QString("[%1] %2").arg(appNameString());
+    QString string = QString(GREEN "<%1" RESET GRAY "@" RESET CYAN "%2>  " RESET "%3").arg(QHostInfo::localHostName()).arg(appNameString());
     switch (echo) {
         case Echo::Mute:   return string.arg( QString("Muted\n") );
         case Echo::StdErr: return string.arg( QString("Writing in stderr stream\n") );
         case Echo::File:   return string.arg( QString("Writing in file %1\n").arg(echoFileStream.device() ? static_cast<QFile*>(echoFileStream.device())->fileName() : "") );
         case Echo::Udp:    return string.arg( QString("Writing to %1:%2\n").arg(echoDestAddress.toString())
                                                                            .arg(echoDestPort) );
-        default:
-            break;
     }
     return string.arg( QString("N/D\n") );
+}
+
+void LoggerPrivate::resetSignals()
+{
+    signal(SIGINT,  originalSignalHandlers[SIGINT]);
+    signal(SIGTERM, originalSignalHandlers[SIGTERM]);
+    signal(SIGQUIT, originalSignalHandlers[SIGQUIT]);
+    signal(SIGSEGV, originalSignalHandlers[SIGSEGV]);
+}
+
+QString LoggerPrivate::debugString(const QString &msg, const QMessageLogContext & context)
+{
+    Q_UNUSED(context)
+    return QString(GRAY "[%1] DEBG <%2> %3" RESET).arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+                                                  .arg(LoggerPrivate::appNameString())
+                                                  .arg(msg);
+}
+
+QString LoggerPrivate::infoString(const QString &msg, const QMessageLogContext & context)
+{
+    Q_UNUSED(context)
+    return QString(GRAY "[%1] " RESET BLUE "INFO <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+                                                                   .arg(LoggerPrivate::appNameString())
+                                                                   .arg(msg);
+}
+
+QString LoggerPrivate::warningString(const QString &msg, const QMessageLogContext & context)
+{
+    Q_UNUSED(context)
+    return QString("[%1] " YELLOW "WARN <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+                                                          .arg(LoggerPrivate::appNameString())
+                                                          .arg(msg);
+}
+
+QString LoggerPrivate::criticalString(const QString &msg, const QMessageLogContext & context)
+{
+    Q_UNUSED(context)
+    return QString("[%1] " RED "CRIT <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+                                                       .arg(LoggerPrivate::appNameString())
+                                                       .arg(msg);
+}
+
+QString LoggerPrivate::fatalString(const QString &msg, const QMessageLogContext & context)
+{
+    return QString(RED "[%1] FATL <%2> terminated at %3:%4 " RESET "%5").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+                                                                        .arg(LoggerPrivate::appNameString())
+                                                                        .arg(context.file)
+                                                                        .arg(context.line)
+                                                                        .arg(msg);
+}
+
+QString LoggerPrivate::hostNameString()
+{
+    return QHostInfo::localHostName();
 }
 
 QString LoggerPrivate::appNameString()
@@ -359,8 +442,8 @@ QString LoggerPrivate::appNameString()
 
 QString LoggerPrivate::appRcCommandString()
 {
-    const QString &filePath = (QFile::exists(QString("qtlogger-%1-rc").arg(appNameString())) ? QString("qtlogger-%1-rc").arg(appNameString())
-                                                                                             : QString("qtlogger-default-rc"));
+    const QString &filePath = (QFile::exists(QString("qtlogger-%1-rc").arg(appNameString())) ? QString("qtlogger.d/qtlogger-%1-rc").arg(appNameString())
+                                                                                             : QString(CONFIG_PATH "/qtlogger-default-rc"));
 
     QFile file(filePath);
     if(file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -393,6 +476,31 @@ QString LoggerPrivate::argCommandString()
     return string;
 }
 
+bool LoggerPrivate::parseDestination(const QString &destination, QHostAddress * address, quint16 * port)
+{
+    const auto &tupple = destination.split(":", QString::SkipEmptyParts);
+    if (tupple.size() == 2)
+    {
+        if (address) { address->setAddress(tupple.first()); }
+        if (port) { *port = tupple.last().toUShort(); }
+        return true;
+    }
+    else if (tupple.size() == 1)
+    {
+        QRegExp rx("\\d+");
+        if (rx.indexIn(tupple.first()) != -1)
+        {
+            if (port) { *port = tupple.first().toUShort(); }
+        }
+        else
+        {
+            if (address) { address->setAddress(tupple.first()); }
+        }
+        return true;
+    }
+    return false;
+}
+
 void LoggerPrivate::switchToStdErr()
 {
     echo = Echo::StdErr;
@@ -400,17 +508,15 @@ void LoggerPrivate::switchToStdErr()
 
 void LoggerPrivate::switchToFile(const QString &filePath, int flushPeriodMsec)
 {
-    echo = Echo::File;
-
     static QFile file;
     file.setFileName(filePath);
     if (!file.open(QFile::WriteOnly))
     {
-        emit toggleStdErr();
         qCritical() << Q_FUNC_INFO << "Echo file opening failed," << file.errorString();
         return;
     }
 
+    echo = Echo::File;
     echoFileStream.setDevice(&file);
     flushTimer.start(flushPeriodMsec);
 }
@@ -432,6 +538,11 @@ void LoggerPrivate::flushEchoFile()
     echoFileStream.flush();
 }
 
+void LoggerPrivate::writeUdpMsg(const QString &msg, const QHostAddress &address, quint16 port)
+{
+    writeSocket.writeDatagram(msg.toLocal8Bit(), address, port);
+}
+
 void LoggerPrivate::onEchoModeChanged()
 {
     flushTimer.stop();
@@ -442,14 +553,16 @@ void LoggerPrivate::onEchoModeChanged()
 
 void LoggerPrivate::onCommandReceived()
 {
-    while (commandSocket.hasPendingDatagrams())
+    while (readSocket.hasPendingDatagrams())
     {
-        const auto &datagram = commandSocket.receiveDatagram();
+        QHostAddress address;
+        QByteArray datagram(int(readSocket.pendingDatagramSize()), 0);
+        readSocket.readDatagram(datagram.data(), datagram.size(), &address);
         QStringList command = QString::fromLocal8Bit(datagram.data()).split(" ", QString::SkipEmptyParts);
 
-        QRegExp rx(command.first());
-        if (rx.indexIn(LoggerPrivate::appNameString()) != -1) {
-            processCommand(command, datagram.senderAddress());
+        if ( !command.isEmpty() && LoggerPrivate::passDestination(command.takeFirst()) )
+        {
+            exec(command.join(" "), address);
         }
     }
 }
@@ -458,13 +571,13 @@ void LoggerPrivate::onAppTerminate(int signum)
 {
     switch (signum)
     {
-        case SIGINT:  Logger::instance().d_ptr->log(QString("[%1] Interrupted").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+        case SIGINT:  Logger::instance().d_ptr->log(LoggerPrivate::fatalString(QString("Interrupt signal received")));
             break;
-        case SIGTERM: Logger::instance().d_ptr->log(QString("[%1] Terminated").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+        case SIGTERM: Logger::instance().d_ptr->log(LoggerPrivate::fatalString(QString("Terminate signal received")));
             break;
-        case SIGQUIT: Logger::instance().d_ptr->log(QString("[%1] Quit signal received").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+        case SIGQUIT: Logger::instance().d_ptr->log(LoggerPrivate::fatalString(QString("Quit signal received")));
             break;
-        case SIGSEGV: Logger::instance().d_ptr->log(QString("[%1] Segmentation fault").arg(QTime::currentTime().toString().toLocal8Bit().constData()));
+        case SIGSEGV: Logger::instance().d_ptr->log(LoggerPrivate::fatalString(QString("Segmentation fault signal received")));
             break;
     }
 
@@ -472,6 +585,8 @@ void LoggerPrivate::onAppTerminate(int signum)
         Logger::instance().d_ptr->flushEchoFile();
     }
 
-    signal(signum, SIG_DFL);
+    Logger::instance().d_ptr->resetSignals();
     raise(signum);
+}
+
 }

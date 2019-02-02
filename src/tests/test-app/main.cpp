@@ -2,7 +2,7 @@
 #include <QTimer>
 #include <QDebug>
 
-#include <qtlogger.h>
+#include <utils/logging/qtlogger.h>
 
 int main(int argc, char *argv[])
 {

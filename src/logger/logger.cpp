@@ -385,7 +385,7 @@ void LoggerPrivate::resetSignals()
 QString LoggerPrivate::debugString(const QString &msg, const QMessageLogContext & context)
 {
     Q_UNUSED(context)
-    return QString(GRAY "[%1] DEBG <%2> %3" RESET).arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+    return QString(GRAY "[%1] DEBG <%2> %3" RESET).arg(QTime::currentTime().toString("hh:mm:ss.zzz").toLocal8Bit().constData())
                                                   .arg(LoggerPrivate::appNameString())
                                                   .arg(msg);
 }
@@ -393,7 +393,7 @@ QString LoggerPrivate::debugString(const QString &msg, const QMessageLogContext 
 QString LoggerPrivate::infoString(const QString &msg, const QMessageLogContext & context)
 {
     Q_UNUSED(context)
-    return QString(GRAY "[%1] " RESET BLUE "INFO <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+    return QString(GRAY "[%1] " RESET BLUE "INFO <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss.zzz").toLocal8Bit().constData())
                                                                    .arg(LoggerPrivate::appNameString())
                                                                    .arg(msg);
 }
@@ -401,7 +401,7 @@ QString LoggerPrivate::infoString(const QString &msg, const QMessageLogContext &
 QString LoggerPrivate::warningString(const QString &msg, const QMessageLogContext & context)
 {
     Q_UNUSED(context)
-    return QString("[%1] " YELLOW "WARN <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+    return QString("[%1] " YELLOW "WARN <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss.zzz").toLocal8Bit().constData())
                                                           .arg(LoggerPrivate::appNameString())
                                                           .arg(msg);
 }
@@ -409,14 +409,14 @@ QString LoggerPrivate::warningString(const QString &msg, const QMessageLogContex
 QString LoggerPrivate::criticalString(const QString &msg, const QMessageLogContext & context)
 {
     Q_UNUSED(context)
-    return QString("[%1] " RED "CRIT <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+    return QString("[%1] " RED "CRIT <%2> " RESET "%3").arg(QTime::currentTime().toString("hh:mm:ss.zzz").toLocal8Bit().constData())
                                                        .arg(LoggerPrivate::appNameString())
                                                        .arg(msg);
 }
 
 QString LoggerPrivate::fatalString(const QString &msg, const QMessageLogContext & context)
 {
-    return QString(RED "[%1] FATL <%2> terminated at %3:%4 " RESET "%5").arg(QTime::currentTime().toString("hh:mm:ss").toLocal8Bit().constData())
+    return QString(RED "[%1] FATL <%2> terminated at %3:%4 " RESET "%5").arg(QTime::currentTime().toString("hh:mm:ss.zzz").toLocal8Bit().constData())
                                                                         .arg(LoggerPrivate::appNameString())
                                                                         .arg(context.file)
                                                                         .arg(context.line)

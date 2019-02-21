@@ -17,7 +17,7 @@ if(DOXYGEN_FOUND)
     )
     add_custom_command(OUTPUT ${DOXYGEN_HTML_INDEX}
                        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile
-                       DEPENDS interface
+                       DEPENDS qtlogger
     )
     add_custom_target(doc ALL
                       DEPENDS ${DOXYGEN_HTML_INDEX}

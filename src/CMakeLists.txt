@@ -1,3 +1,3 @@
 add_subdirectory(logger)
-add_subdirectory(utils)
+add_subdirectory(utility)
 add_subdirectory(tests)
